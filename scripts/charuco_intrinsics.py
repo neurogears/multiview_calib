@@ -90,7 +90,7 @@ def read_chessboards(images, board, aruco_dict, number_of_markers, verbose):
                     objpoints.append(obj_points)
                     imgpoints.append(img_points)
 
-                    if verbose:
+                    if False:
                         image_copy = np.copy(frame)
 
                         for pts_idx in range(res2[1].shape[0]):
@@ -126,7 +126,7 @@ def read_chessboards(images, board, aruco_dict, number_of_markers, verbose):
     return all_corners, all_ids, imsize, objpoints, imgpoints, all_im_ids
 
 
-def calibrate_camera(board, all_corners, all_ids, imsize, cam_name):
+def calibrate_camera(board, all_corners, all_ids, imsize, camera_matrix, dist_coeffs):
     """
     Calibrates the camera using the dected corners.
     """
@@ -137,20 +137,6 @@ def calibrate_camera(board, all_corners, all_ids, imsize, cam_name):
     #     + cv.CALIB_FIX_ASPECT_RATIO
     #     + cv.CALIB_RATIONAL_MODEL
     # )
-
-    if cam_name == "710038":
-        focal_length_init = 1780
-    else:
-        focal_length_init = 2300
-
-    cameraMatrixInit = np.array(
-        [
-            [focal_length_init, 0.0, imsize[1] / 2.0],
-            [0.0, focal_length_init, imsize[0] / 2.0],
-            [0.0, 0.0, 1.0],
-        ]
-    )
-    distCoeffsInit = np.zeros((5, 1))
 
     (
         ret,
@@ -166,8 +152,8 @@ def calibrate_camera(board, all_corners, all_ids, imsize, cam_name):
         charucoIds=all_ids,
         board=board,
         imageSize=imsize,
-        cameraMatrix=cameraMatrixInit,
-        distCoeffs=distCoeffsInit,
+        cameraMatrix=camera_matrix,
+        distCoeffs=dist_coeffs,
         flags=flags,
         criteria=(cv.TERM_CRITERIA_EPS & cv.TERM_CRITERIA_COUNT, 10000, 1e-9),
     )
@@ -188,6 +174,7 @@ def get_charuco_intrinsics(
     cam_name,
     images,
     charuco_setup,
+    intrinsics_guess,
     output_path,
     verbose,
 ):
@@ -240,6 +227,24 @@ def get_charuco_intrinsics(
     if not verbose:
 
         if len(all_im_ids) > 0:
+            guess = intrinsics_guess.get(cam_name)
+            if guess:
+                focal_length_init = guess["focal_length_init"]
+                distortion_coefficients = guess["distortion_coefficients"]
+            else:
+                focal_length_init = 2300
+                distortion_coefficients = [0.0, 0.0, 0.0, 0.0, 0.0]
+
+            cameraMatrixInit = np.array(
+                [
+                    [focal_length_init, 0.0, imsize[1] / 2.0],
+                    [0.0, focal_length_init, imsize[0] / 2.0],
+                    [0.0, 0.0, 1.0],
+                ]
+            )
+            distCoeffsInit = np.array(distortion_coefficients).reshape((5, 1))
+            logging.info("Calibrating camera {}".format(cam_name))
+
             (
                 ret,
                 mtx,
@@ -249,7 +254,8 @@ def get_charuco_intrinsics(
                 std_dev_intrisics,
                 std_dev_extrinsics,
                 per_view_errors,
-            ) = calibrate_camera(board, all_corners, all_ids, imsize, cam_name)
+            ) = calibrate_camera(board, all_corners, all_ids, imsize, cameraMatrixInit, distCoeffsInit)
+            logging.info("Done calibrating camera {}".format(cam_name))
 
             # add metrics
             def reprojection_error(mtx, distCoeffs, rvecs, tvecs):
@@ -333,6 +339,7 @@ config = utils.json_read(config_file)
 img_path = config["img_path"]
 cam_names = config["cam_ordered"]
 charuco_setup = config["charuco_setup"]
+intrinsics_guess = config["intrinsics_guess"]
 output_path = os.path.join(root_folder + "/output/intrinsics/")
 if_serial = args.verbose
 
@@ -359,7 +366,7 @@ for cam in cam_names:
 if if_serial:
     for idx, cam in enumerate(cam_names):
         get_charuco_intrinsics(
-            cam, images_all_cams[idx], charuco_setup, output_path, True
+            cam, images_all_cams[idx], charuco_setup, intrinsics_guess, output_path, True
         )
 else:
     num_workers=17
@@ -368,6 +375,7 @@ else:
         partial_func = partial(
             get_charuco_intrinsics,
             charuco_setup=charuco_setup,
+            intrinsics_guess=intrinsics_guess,
             output_path=output_path,
             verbose=False,
         )
