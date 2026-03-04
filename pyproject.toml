@@ -8,8 +8,9 @@ dependencies = [
     "imageio>=2.37.2",
     "matplotlib>=3.10.8",
     "networkx>=3.6.1",
-    "opencv-contrib-python>=4.13.0.92",
-    "opencv-python>=4.13.0.92",
-    "rerun-sdk>=0.30.0",
+    "numpy<2",
+    "opencv-contrib-python<4.8",
+    "opencv-python<4.8",
+    "rerun-sdk<0.24",
     "tqdm>=4.67.3",
 ]
